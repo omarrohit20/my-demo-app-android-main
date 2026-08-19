@@ -223,6 +223,107 @@ there's no `--spec` flag needed since each config only points at that one
 file. `npm run test:lint` is the exception — it's a plain Gradle build step
 (`gradlew lintDebug`) and doesn't touch Appium/the emulator at all.
 
+### Running on BrowserStack (no local emulator required)
+
+[`wdio.browserstack.conf.js`](wdio.browserstack.conf.js) runs the
+**accessibility scan** — the same `functional.spec.js` flow and audit logic
+as `npm run test:a11y` (see "How the accessibility scan piggybacks on it"
+above) — against a real device in BrowserStack App Automate instead of the
+local emulator, so no Appium server or `adb`/emulator setup is needed on
+your machine for this one. It always:
+
+- tests this repo's own `release/mda.apk` (no env var to point it at a
+  different app) — the config file uploads it fresh to BrowserStack's App
+  Automate REST API on every run, **synchronously, before the config object
+  is even built** (`utils/browserstackAppUpload.js`'s
+  `uploadAppToBrowserStackSync`, shelling out to `curl`), and puts the
+  resulting `bs://<app_id>` straight into the `appium:app` capability; see
+  the note below on why it's done this way, and
+- runs the accessibility scan, not a plain functional-only pass — it sets
+  `A11Y_SCAN` itself, so there's nothing to configure for that either.
+
+The only thing that's configurable is the device, via env vars (all optional
+except the credentials):
+
+| Env var | Required | Default | Meaning |
+|---|---|---|---|
+| `BROWSERSTACK_USERNAME` | ✅ | — | Your BrowserStack account username |
+| `BROWSERSTACK_ACCESS_KEY` | ✅ | — | Your BrowserStack account access key |
+| `BROWSERSTACK_DEVICE_NAME` |  | `Google Pixel 7` | Device to run on |
+| `BROWSERSTACK_DEVICE_VERSION` |  | `13.0` | Android (OS) version on that device |
+
+> There is no "browser" involved in testing a native `.apk` — for BrowserStack
+> App Automate, the equivalent of "browser name and version" is **device
+> name** and **Android (OS) version**, which is what these env vars
+> configure. Both credentials come from your BrowserStack account settings
+> (browserstack.com/accounts/settings).
+
+Copy [`.env.example`](.env.example) to `.env` in this folder and fill in
+your credentials — `@wdio/cli` loads `.env` automatically on every
+`npm run test:*` / `npx wdio run ...` invocation, so nothing else needs to
+source it. `.env` is gitignored; never commit real credentials.
+
+```bash
+cd appium-tests
+cp .env.example .env
+# edit .env: set BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY
+
+npm run test:browserstack                                          # default device (Google Pixel 7, Android 13.0)
+
+BROWSERSTACK_DEVICE_NAME="Samsung Galaxy S23" \
+BROWSERSTACK_DEVICE_VERSION="13.0" \
+npm run test:browserstack                                          # a different device
+```
+
+Like `npm run test:a11y`, this passes `includeMochaReports: false` to
+[`wdio.shared.conf.js`](wdio.shared.conf.js) — the functional flow's mocha
+pass/fail isn't accessibility data, so it isn't written anywhere. The real
+accessibility findings land in the same `reports/a11y/` folder `npm run
+test:a11y` uses (`accessibility-report.json`, `wcag-report.json`,
+`screenreader-report.json`, `report.html`, `screenshot-report.html`) —
+`functional.spec.js`'s `after()` hook writes those regardless of which
+config (local emulator or BrowserStack) ran it, so a BrowserStack run
+overwrites the same files a local `npm run test:a11y` run would. Check the
+console output for the BrowserStack session URL to view the device video
+and Appium logs on BrowserStack's own dashboard.
+
+TalkBack enable/disable and the touch-exploration probe (both driven by the
+local `adb` CLI — see `utils/talkback.js`) have no local device to talk to
+when running against BrowserStack, so they're skipped automatically (logged,
+not fatal) — see the "TalkBack setup skipped" troubleshooting note below.
+Structural-sweep, WCAG/axe-core (WebView), and Android Lint checks are
+unaffected, since none of them depend on local `adb` access.
+
+**Why the app is uploaded via a direct, synchronous REST call instead of
+letting `@wdio/browserstack-service` do it, or doing it from an
+`onPrepare` hook**: two attempts before this one both failed in practice:
+
+1. Handing the service a local file path (via a service-option `app`
+   field) to auto-upload produced a raw/unresolved value BrowserStack's
+   grid rejected with `BROWSERSTACK_INVALID_APP_CAP` ("app_url/custom_id/
+   shareable_id ... is invalid").
+2. Uploading it ourselves from an async `onPrepare` hook and mutating
+   `capabilities` there looked correct (the documented pattern for
+   computed capability values), but that mutation didn't reliably land
+   before the runner's session request fired — the request went out with
+   no `appium:app` set at all, and BrowserStack silently fell back to a
+   plain Chrome browser session (`[chrome Android #0-0]` in the logs, with
+   `functional.spec.js`'s native-app selectors then failing against a
+   browser instead of erroring clearly about the missing app).
+
+Uploading synchronously (`uploadAppToBrowserStackSync` in
+[`utils/browserstackAppUpload.js`](utils/browserstackAppUpload.js), via
+`curl` — Node has no synchronous HTTP client) at the top of
+`wdio.browserstack.conf.js`, **before** `exports.config` is assigned,
+removes the ordering question entirely: `capabilities[0]['appium:app']` is
+already a real `bs://<app_id>` by the time WebdriverIO reads the config.
+Bad credentials or a missing APK now fail loudly at config-load time
+instead of silently degrading into a browser session. The
+`@wdio/browserstack-service` is still used (for the BrowserStack
+dashboard/build integration) with `skipAppOverride: true`, telling it not
+to touch app upload/capabilities at all — see `validateSkipAppOverride` in
+`@wdio/browserstack-service` if you want the exact mechanics.
+
 > `functional.spec.js` locates elements by the resource-ids/text visible on
 > each screen (`titleTV`, `cartTV`, `cartRL`, `menuIV`, `fullNameET`,
 > `paymentBtn`, drawer item text like `"WebView"`/`"About"`, ...). These were
@@ -344,6 +445,51 @@ Instead:
 
 ## Troubleshooting
 
+- **`BROWSERSTACK_USERNAME is required to run wdio.browserstack.conf.js`**
+  (or the access-key equivalent) — set both `BROWSERSTACK_USERNAME` and
+  `BROWSERSTACK_ACCESS_KEY` before running `npm run test:browserstack`; see
+  [Running on BrowserStack](#running-on-browserstack-no-local-emulator-required).
+- **`TalkBack setup skipped (no local adb access to this device)`** — expected
+  and non-fatal on `npm run test:browserstack`: `utils/talkback.js` drives
+  TalkBack via the local `adb` CLI, which has no path to a remote
+  BrowserStack device. `functional.spec.js` catches this and continues with
+  `talkbackAvailable = false` for that run — every other check (structural
+  sweep, WCAG/axe-core WebView scan, Android Lint) is unaffected. Run
+  `npm run test:a11y` locally if you need real TalkBack coverage.
+- **`[BROWSERSTACK_INVALID_APP_CAP] The app_url/ custom_id/ shareable_id
+  specified in the 'app' capability ... is invalid`** on
+  `npm run test:browserstack` — this is the exact failure mode the
+  synchronous upload in `wdio.browserstack.conf.js` (see "Why the app is
+  uploaded via a direct, synchronous REST call" above) exists to avoid, so
+  seeing it again means the upload itself didn't produce a usable
+  `bs://<app_id>`. Check the console for the "Uploading .../App uploaded:
+  bs://..." lines printed at the very start of the run (before any test
+  output) — if "App uploaded" never printed, the upload threw and you'd see
+  a different, clearer error instead (see the next entry); if it did print
+  a `bs://` URL and you still hit this, double check you haven't
+  reintroduced a conflicting `appium:app` value or a service-level `app`
+  option elsewhere in the config.
+- **`Uploading .../release/mda.apk to BrowserStack App Automate...` prints,
+  then a `BrowserStack app upload failed: curl: (22) ...` error, and the run
+  exits before any test starts** — the synchronous upload step failed and
+  is (correctly) failing fast rather than falling back to a browser
+  session. `curl: (22) The requested URL returned error: 401` means
+  `BROWSERSTACK_USERNAME`/`BROWSERSTACK_ACCESS_KEY` in your `.env` are
+  wrong or expired — re-check them against
+  browserstack.com/accounts/settings. Any other `curl` error (network
+  timeout, DNS failure, etc.) means the upload request itself didn't reach
+  BrowserStack — check your network/proxy settings.
+- **Test output shows `[chrome Android #0-0]` and fails with `The selector
+  "undefined" used with strategy "undefined" is invalid!`** — this means
+  the BrowserStack session that actually started was a plain Chrome browser
+  session, not an App Automate session running `mda.apk`, so
+  `functional.spec.js`'s native-app element locators (`id=com.saucelabs...`)
+  can't resolve to anything. This should no longer happen with the
+  synchronous upload (it fails fast instead, per the entries above) — if
+  you still see it, you're likely running an older cached
+  `wdio.browserstack.conf.js` or have re-added an `onPrepare`-based upload;
+  confirm the file matches the synchronous-upload version described in
+  "Why the app is uploaded via a direct, synchronous REST call" above.
 - **`Could not find 'aapt2.exe'`** — the Appium server was started before
   `build-tools;34.0.0` was installed, or `ANDROID_HOME` wasn't set in the
   terminal that launched `appium`. Install the build-tools package and

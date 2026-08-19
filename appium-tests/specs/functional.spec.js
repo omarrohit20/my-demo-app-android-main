@@ -32,6 +32,8 @@ const { generateA11yScreenshotReport } = require('../utils/generateA11yScreensho
 // otherwise by reshaping structural findings into axe-violation-looking
 // objects would misattribute them to a WCAG/axe scan that never actually ran
 // against that screen.
+
+// test
 const A11Y_SCAN = process.env.A11Y_SCAN === 'true';
 
 const CREDENTIALS_TIMEOUT = 15000;
@@ -106,16 +108,33 @@ describe(`MDA functional workflows${A11Y_SCAN ? ' (+ accessibility scan)' : ''}`
   before(async function () {
     if (!A11Y_SCAN) return;
     density = await getDeviceDensity(driver);
-    talkbackAvailable = talkback.isTalkBackInstalled();
-    if (talkbackAvailable) {
-      talkback.enableTalkBack();
-      await driver.pause(2000);
+    try {
+      // talkback.js shells out to the local `adb` CLI against whatever
+      // device/emulator it's attached to. That's the local emulator for
+      // wdio.a11y.conf.js, but there is no local adb path to a remote
+      // BrowserStack device (wdio.browserstack.conf.js) — treat any adb
+      // failure as "TalkBack not available for this run" rather than
+      // letting it crash the whole suite.
+      talkbackAvailable = talkback.isTalkBackInstalled();
+      if (talkbackAvailable) {
+        talkback.enableTalkBack();
+        await driver.pause(2000);
+      }
+    } catch (e) {
+      console.log(`TalkBack setup skipped (no local adb access to this device): ${e.message}`);
+      talkbackAvailable = false;
     }
   });
 
   after(async () => {
     if (!A11Y_SCAN) return;
-    if (talkbackAvailable) talkback.disableTalkBack();
+    if (talkbackAvailable) {
+      try {
+        talkback.disableTalkBack();
+      } catch (e) {
+        console.log(`TalkBack teardown skipped: ${e.message}`);
+      }
+    }
 
     const reportsDir = path.resolve(__dirname, '..', 'reports', 'a11y', 'json');
     fs.mkdirSync(reportsDir, { recursive: true });
