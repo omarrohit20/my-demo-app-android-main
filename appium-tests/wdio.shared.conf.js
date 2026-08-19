@@ -5,8 +5,19 @@ const { ReportAggregator } = require('wdio-html-nice-reporter');
  * Builds a wdio config scoped to one report suite (its own json/ and html/
  * output folders), so functional and accessibility runs don't overwrite
  * each other's reports.
+ *
+ * `includeMochaReports` controls whether wdio's own per-test pass/fail
+ * reporters (`json`, `html-nice`) are wired up. functional.spec.js runs
+ * under BOTH wdio.functional.conf.js and wdio.a11y.conf.js (the latter with
+ * A11Y_SCAN=true) — those mocha pass/fail results describe the *functional*
+ * flow, not accessibility findings, so the a11y suite passes
+ * `includeMochaReports: false` and instead relies on the accessibility-only
+ * JSON/HTML reports functional.spec.js's own after() hook writes directly
+ * (see utils/generateA11yHtmlReport.js). Without this, reports/a11y/ would
+ * contain the same functional test pass/fail as reports/functional/,
+ * defeating the point of having two separate report folders.
  */
-function createConfig({ suiteName, reportTitle, specs }) {
+function createConfig({ suiteName, reportTitle, specs, includeMochaReports = true }) {
   const suiteReportsDir = path.resolve(__dirname, 'reports', suiteName);
   const jsonReportsDir = path.resolve(suiteReportsDir, 'json');
   const htmlReportsDir = path.resolve(suiteReportsDir, 'html');
@@ -18,6 +29,30 @@ function createConfig({ suiteName, reportTitle, specs }) {
   const htmlReportsDirRelative = path.relative(__dirname, htmlReportsDir);
 
   let reportAggregator;
+
+  const reporters = ['spec'];
+  if (includeMochaReports) {
+    reporters.push(
+      [
+        'json',
+        {
+          outputDir: jsonReportsDir,
+          outputFileFormat: (opts) => `results-${opts.cid}.json`,
+        },
+      ],
+      [
+        'html-nice',
+        {
+          outputDir: htmlReportsDirRelative,
+          filename: 'report.html',
+          reportTitle,
+          useOnAfterCommandForScreenshot: false,
+          showInBrowser: false,
+          collapseTests: false,
+        },
+      ]
+    );
+  }
 
   return {
     runner: 'local',
@@ -42,27 +77,7 @@ function createConfig({ suiteName, reportTitle, specs }) {
     port: 4723,
     path: '/',
     framework: 'mocha',
-    reporters: [
-      'spec',
-      [
-        'json',
-        {
-          outputDir: jsonReportsDir,
-          outputFileFormat: (opts) => `results-${opts.cid}.json`,
-        },
-      ],
-      [
-        'html-nice',
-        {
-          outputDir: htmlReportsDirRelative,
-          filename: 'report.html',
-          reportTitle,
-          useOnAfterCommandForScreenshot: false,
-          showInBrowser: false,
-          collapseTests: false,
-        },
-      ],
-    ],
+    reporters,
     mochaOpts: {
       ui: 'bdd',
       timeout: 180000,
@@ -70,6 +85,7 @@ function createConfig({ suiteName, reportTitle, specs }) {
     reportsDir: suiteReportsDir,
 
     onPrepare: function () {
+      if (!includeMochaReports) return;
       reportAggregator = new ReportAggregator({
         outputDir: htmlReportsDirRelative,
         filename: 'report.html',
@@ -80,6 +96,7 @@ function createConfig({ suiteName, reportTitle, specs }) {
     },
 
     onComplete: async function () {
+      if (!includeMochaReports) return;
       await reportAggregator.createReport();
     },
   };
