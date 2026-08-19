@@ -1,0 +1,30 @@
+{
+  "name": "appium-tests",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "npm run test:functional && npm run test:a11y",
+    "test:functional": "wdio run wdio.functional.conf.js",
+    "test:a11y": "wdio run wdio.a11y.conf.js && npm run test:lint",
+    "test:lint": "node scripts/run-android-lint.js",
+    "clean:reports": "node -e \"require('fs').rmSync('reports', { recursive: true, force: true })\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@wdio/cli": "^9.30.1",
+    "@wdio/json-reporter": "^9.30.1",
+    "@wdio/local-runner": "^9.30.1",
+    "@wdio/mocha-framework": "^9.30.1",
+    "@wdio/spec-reporter": "^9.30.1",
+    "axe-core": "^4.12.1",
+    "chai": "^6.2.2",
+    "mocha": "^11.8.0",
+    "wdio-html-nice-reporter": "^8.1.7",
+    "webdriverio": "^9.30.1",
+    "xml2js": "^0.6.2"
+  }
+}
