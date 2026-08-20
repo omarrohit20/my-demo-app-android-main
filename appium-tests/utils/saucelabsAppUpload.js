@@ -1,6 +1,58 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { execFileSync } = require('child_process');
+
+function sha256Of(filePath) {
+  const hash = crypto.createHash('sha256');
+  hash.update(fs.readFileSync(filePath));
+  return hash.digest('hex');
+}
+
+/**
+ * Looks up whether this exact APK (by sha256) is already sitting in Sauce's
+ * app storage from a previous run, via GET /v1/storage/files?sha256=...
+ * Sauce's upload endpoint is rate-limited to 5 requests per 15 minutes
+ * (https://api.<region>.saucelabs.com/v1/storage/upload), which every local
+ * re-run/retry of `npm run test:saucelabs` was blowing through re-uploading
+ * an unchanged APK. Reusing the existing storage id when the content
+ * matches avoids that limit entirely for the common case (iterating on the
+ * test spec without rebuilding the app).
+ */
+function findExistingUpload({ username, accessKey, apkPath, region }) {
+  const sha256 = sha256Of(apkPath);
+  let body;
+  try {
+    body = execFileSync(
+      'curl',
+      [
+        '--silent',
+        '--show-error',
+        '--fail-with-body',
+        '--user',
+        `${username}:${accessKey}`,
+        '--get',
+        `https://api.${region}.saucelabs.com/v1/storage/files`,
+        '--data-urlencode',
+        `sha256=${sha256}`,
+      ],
+      { encoding: 'utf8' }
+    );
+  } catch (e) {
+    // Lookup is a best-effort optimization — if it fails for any reason,
+    // fall through to a real upload rather than blocking the run on it.
+    return null;
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(body);
+  } catch (e) {
+    return null;
+  }
+  const match = parsed.items && parsed.items[0];
+  return match ? `storage:${match.id}` : null;
+}
 
 /**
  * Synchronous equivalent of BrowserStack's uploadAppToBrowserStackSync(), for
@@ -19,6 +71,11 @@ const { execFileSync } = require('child_process');
 function uploadAppToSauceLabsSync({ username, accessKey, apkPath, region = 'us-west-1' }) {
   if (!fs.existsSync(apkPath)) {
     throw new Error(`App not found at ${apkPath} — build/place the APK there before uploading to Sauce Labs.`);
+  }
+
+  const existing = findExistingUpload({ username, accessKey, apkPath, region });
+  if (existing) {
+    return existing;
   }
 
   let body;
