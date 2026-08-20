@@ -9,6 +9,7 @@
     "test:a11y": "wdio run wdio.a11y.conf.js && npm run test:lint",
     "test:lint": "node scripts/run-android-lint.js",
     "test:browserstack": "wdio run wdio.browserstack.conf.js",
+    "test:saucelabs": "wdio run wdio.saucelabs.conf.js",
     "clean:reports": "node -e \"require('fs').rmSync('reports', { recursive: true, force: true })\""
   },
   "keywords": [],

@@ -1,0 +1,79 @@
+[
+    {
+        "name": "sdk:automate:hub-management",
+        "entryType": "measure",
+        "startTime": 1787134290482.0923,
+        "duration": 231.63359999656677,
+        "detail": null,
+        "success": true,
+        "failure": null,
+        "worker": "unknown",
+        "platform": 0
+    },
+    {
+        "name": "sdk:testhub",
+        "entryType": "measure",
+        "startTime": 1787134290478.9453,
+        "duration": 1430.2232000231743,
+        "detail": null,
+        "success": true,
+        "failure": null,
+        "worker": "unknown",
+        "platform": 0
+    },
+    {
+        "name": "sdk:percy",
+        "entryType": "measure",
+        "startTime": 1787134293164.0847,
+        "duration": 810.1207000017166,
+        "detail": null,
+        "success": false,
+        "failure": {},
+        "worker": "unknown",
+        "platform": 0
+    },
+    {
+        "name": "sdk:automate:local",
+        "entryType": "measure",
+        "startTime": 1787134293974.8923,
+        "duration": 0.6148999929428101,
+        "detail": null,
+        "success": true,
+        "failure": null,
+        "worker": "unknown",
+        "platform": 0
+    },
+    {
+        "name": "sdk:app-automate:app-upload",
+        "entryType": "measure",
+        "startTime": 1787134293976.2805,
+        "duration": 26154.18290001154,
+        "detail": null,
+        "success": false,
+        "failure": {},
+        "worker": "unknown",
+        "platform": 0
+    },
+    {
+        "name": "sdk:automate:print-buildlink",
+        "entryType": "measure",
+        "startTime": 1787134372590.0164,
+        "duration": 1629.2256999611855,
+        "detail": null,
+        "success": true,
+        "failure": null,
+        "worker": "unknown",
+        "platform": 0
+    },
+    {
+        "name": "sdk:cli:onStop",
+        "entryType": "measure",
+        "startTime": 1787134372588.3577,
+        "duration": 1852.922300040722,
+        "detail": null,
+        "success": true,
+        "failure": null,
+        "worker": "unknown",
+        "platform": 0
+    }
+]
